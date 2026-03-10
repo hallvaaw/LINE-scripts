@@ -1,0 +1,100 @@
+with open("/data/chip_seq/single_end.txt", "r") as file_:
+    SAMPLES  = file_.read().splitlines()
+
+# SAMPLES = ["SRR172861", "SRR172862", "SRR172863", "SRR172864", "SRR172865", "SRR172870"]
+
+rule all:
+    input:
+        expand("/data/chip_seq/{sample}.bwig", sample = SAMPLES)
+
+       
+rule star:
+    input:
+        read=["/data/chip_seq/{sample}_1_val_1.fq","/data/chip_seq/{sample}_2_val_2.fq"]
+    output:
+        "/data/chip_seq/{sample}.sam"
+    
+    params:
+        genomedir="/data/chip_seq/",
+        genomefastafile="/data/chip_seq/fasta_files/mm9.fa",
+        gtf_file="/data/chip_seq/Mus_musculus.NCBIM37.67.gtf"
+
+    shell:
+        """
+        export PATH=/software/STAR/2.7.2b/bin:$PATH
+        STAR --runThreadN 8 --runMode genomeGenerate --genomeDir /data/chip_seq/ --genomeFastaFiles /data/chip_seq/fasta_files/mm9.fa --sjdbGTFfile /data/chip_seq/Mus_musculus.NCBIM37.67.gtf --readFilesIn 
+        STAR --runThreadN 8 --genomeDir /data/chip_seq/ --readFilesIn SRR1991255_trimmed.fq
+        STAR --runThreadN 8 --runMode genomeGenerate --genomeDir {params.genomedir} --genomeFastaFiles {params.genomefastafile} --sjdbGTFfile {params.gtf_file}
+        bowtie2 -p 7 -x {params.index} -1 {input.read[0]} -2 {input.read[1]} -S {output}
+        """
+
+rule sort_sam:
+    input:
+        "/data/chip_seq/{sample}.sam"
+
+    output:
+        bam_input="/data/chip_seq/{sample}.bam",
+	bam_sorted="/data/chip_seq/{sample}_sorted.bam"
+
+    shell:
+        """
+        export PATH=/software/miniconda2/bin:$PATH
+        which bowtie2
+        samtools view {input} -bS > {output.bam_input}
+        samtools sort {output.bam_input} -o {output.bam_sorted}
+        """
+
+rule make_bedgraph:
+    input:
+        sorted_bam_file="/data/chip_seq/{sample}_sorted.bam"
+
+    output:
+        bedgraph_input="/data/chip_seq/{sample}.bedGraph",
+        bedgraph_sorted="/data/chip_seq/{sample}_sorted.bedGraph"
+
+    params:
+        chromsizes="/data/chip_seq/mm9.chrom.sizes" 
+
+    shell:
+        """
+        genomeCoverageBed -ibam {input.sorted_bam_file} -bg -g {params.chromsizes} | sort --temporary-directory=/data/ -k1,1 -k2,2n > {output.bedgraph_input}
+        sort --temporary-directory=/data/ -k1,1 -k2,2n {output.bedgraph_input} > {output.bedgraph_sorted}
+        """
+
+rule make_bigwig:
+    input:
+        bedgraph_sorted="/data/chip_seq/{sample}.bedGraph"
+
+    output:
+        bw_files="/data/chip_seq/{sample}.bwig"
+
+    params:
+        chromsizes="/data/chip_seq/mm9.chrom.sizes" 
+
+    shell:
+        """
+        /home/bedGraphToBigWig -unc {input.bedgraph_sorted} {params.chromsizes} {output.bw_files} 
+        """
+
+# rule alignment:
+#     input:
+#         fq_files_r1=expand("/data/chip_seq/{sample}_1_val_1.fq", sample = SAMPLES),
+#         fq_files_r2=expand("/data/chip_seq/{sample}_2_val_2.fq", sample = SAMPLES)
+# 
+#     output:
+#         sorted_bam_file=expand("/data/chip_seq/{sample}.bam", sample = SAMPLES)
+# 
+#     params:
+#         index="/data/chip_seq/mm9_index"
+# 
+#     shell:
+#         """
+#         export PATH=/software/miniconda2/bin:$PATH
+#         which bowtie2
+#         bowtie2 -p 7 -x {params.index} -1 {input.fq_files_r1} -2 {input.fq_files_r2} -S INPUT.sam
+#         samtools view INPUT.sam -bS > INPUT.bam
+#         samtools sort INPUT.bam -o {output.sorted_bam_file}
+#         rm INPUT.sam
+#         rm INPUT.bam
+#         """
+
