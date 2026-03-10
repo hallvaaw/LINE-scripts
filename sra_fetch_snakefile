@@ -1,0 +1,17 @@
+
+with open("/chip_seq/accession_numbers.txt", "r") as file_:
+   SAMPLES  = file_.read().splitlines()
+
+rule all:
+    input:
+        expand("/chip_seq/fasta_files/{sample}.fastq", sample = SAMPLES)
+
+checkpoint prefetch:
+    params:
+        {sample}
+
+    shell:
+        """
+        export PATH=/sra/sratoolkit.2.10.9-ubuntu64/bin/
+        prefetch {params} --max-size 100GB
+        """
