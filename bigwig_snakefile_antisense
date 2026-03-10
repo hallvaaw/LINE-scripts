@@ -1,0 +1,109 @@
+with open("data/chip_seq/single_end.txt", "r") as file_:
+    SAMPLES  = file_.read().splitlines()
+
+# SAMPLES = ["SRR172861", "SRR172862", "SRR172863", "SRR172864", "SRR172865", "SRR172870"]
+
+rule all:
+    input:
+        expand("/data/chip_seq/{sample}sense.bwig", sample = SAMPLES),
+        expand("/data/chip_seq/{sample}antisense.bwig", sample = SAMPLES)
+
+rule sort_sam:
+    input:
+        "/data/chip_seq/{sample}.sam"
+
+    output:
+        sam_plus="/data/chip_seq/{sample}_plus.sam",
+        sam_minus="/data/chip_seq/{sample}_minus.sam",
+        bam_plus="/data/chip_seq/{sample}_plus.bam",
+        bam_minus="/data/chip_seq/{sample}_minus.bam",
+    	bam_plus_sorted="/data/chip_seq/{sample}_plus_sorted.bam",
+    	bam_minus_sorted="/data/chip_seq/{sample}_minus_sorted.bam"
+
+    shell:
+        """
+        export PATH=/software/miniconda2/bin:$PATH
+        which bowtie2
+        samtools view -F 16 -b -o {output.sam_plus} {input}
+        samtools view -f 16 -b -o {output.sam_minus} {input}
+        samtools view {output.sam_plus} -bS > {output.bam_plus}
+        samtools view {output.sam_minus} -bS > {output.bam_minus}
+        samtools sort {output.bam_plus} -o {output.bam_plus_sorted}
+        samtools sort {output.bam_minus} -o {output.bam_minus_sorted}
+        """
+
+rule intersect_:
+    input:
+    	bam_plus_sorted="/data/chip_seq/{sample}_plus_sorted.bam",
+    	bam_minus_sorted="/data/chip_seq/{sample}_minus_sorted.bam",
+        bed_file="/data/chip_seq/bed_files/L1Md_mm9_FL_.bed"
+
+    output:
+        bam_sense1="/data/chip_seq/{sample}_sense1.bam",
+        bam_sense2="/data/chip_seq/{sample}_sense2.bam",
+        bam_antisense1="/data/chip_seq/{sample}_antisense1.bam",
+        bam_antisense2="/data/chip_seq/{sample}_antisense2.bam"
+        
+    shell:
+        """
+        bedtools intersect -S -a {input.bam_plus_sorted} -b {input.bed_file} > {output.bam_sense1}
+        bedtools intersect -S -a {input.bam_minus_sorted} -b {input.bed_file} > {output.bam_sense2}
+        bedtools intersect -s -a {input.bam_plus_sorted} -b {input.bed_file} > {output.bam_antisense1}
+        bedtools intersect -s -a {input.bam_minus_sorted} -b {input.bed_file} > {output.bam_antisense2}
+        """
+
+rule bam_merge:
+    input:
+        bam_sense1="/data/chip_seq/{sample}_sense1.bam",
+        bam_sense2="/data/chip_seq/{sample}_sense2.bam",
+        bam_antisense1="/data/chip_seq/{sample}_antisense1.bam",
+        bam_antisense2="/data/chip_seq/{sample}_antisense2.bam"
+
+    output:
+        bam_sense="/data/chip_seq/{sample}_sense.bam",
+        bam_antisense="/data/chip_seq/{sample}_antisense.bam"
+
+    shell:
+        """
+        export PATH=/software/miniconda2/bin:$PATH
+        samtools merge {output.bam_sense} {input.bam_sense1} {input.bam_sense2}
+        samtools merge {output.bam_antisense} {input.bam_antisense1} {input.bam_antisense2}
+        """
+
+
+rule make_bedgraph:
+    input:
+    	bam_sense="/data/chip_seq/{sample}_sense.bam",
+    	bam_antisense="/data/chip_seq/{sample}_antisense.bam"
+
+    output:
+        bedgraph_sense="/data/chip_seq/{sample}_sense.bedGraph",
+        bedgraph_antisense="/data/chip_seq/{sample}_antisense.bedGraph"
+
+    params:
+        chromsizes="/data/chip_seq/mm9.chrom.sizes" 
+
+    shell:
+        """
+        genomeCoverageBed -ibam {input.bam_sense} -bg -g {params.chromsizes} | sort --temporary-directory=/data/ -k1,1 -k2,2n > {output.bedgraph_sense}
+        genomeCoverageBed -ibam {input.bam_antisense} -bg -g {params.chromsizes} | sort --temporary-directory=/data/ -k1,1 -k2,2n > {output.bedgraph_antisense}
+        """
+
+rule make_bigwig:
+    input:
+        bedgraph_sense="/data/chip_seq/{sample}_sense.bedGraph",
+        bedgraph_antisense="/data/chip_seq/{sample}_antisense.bedGraph"
+
+    output:
+        bw_sense="/data/chip_seq/{sample}sense.bwig",
+        bw_antisense="/data/chip_seq/{sample}antisense.bwig"
+
+    params:
+        chromsizes="/data/chip_seq/mm9.chrom.sizes" 
+
+    shell:
+        """
+        /home/bedGraphToBigWig -unc {input.bedgraph_sense} {params.chromsizes} {output.bw_sense} 
+        /home/bedGraphToBigWig -unc {input.bedgraph_antisense} {params.chromsizes} {output.bw_antisense} 
+        """
+
