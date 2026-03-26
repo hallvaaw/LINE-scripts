@@ -1,0 +1,60 @@
+# SAMPLES = ['L1MD3', 'Lx7', 'L1VL2', 'Lx3B', 'L1Md_F3', 'L1Md_F', 'L1_Mus1', 'L1ME5', 'Lx2A1', 'Lx4A', 'L1Md_T', 'L1Md_F2', 'Lx3_Mus', 'Lx3A', 'Lx8', 'L1Md_A', 'Lx4B', 'L1VL4', 'L1_Mur1', 'Lx6', 'Lx2B', 'L1_Mus4', 'L1MA9', 'Lx2A', 'Lx', 'Lx5', 'L1_Mur3', 'L1VL1', 'Lx2', 'Lx9', 'Lx3C', 'L1MA4', 'MusHAL1', 'L1_Mus3', 'L1Md_Gf', 'L1_Mus2', 'inactive_lines', 'active_lines', 'all_genes', 'lx_lines', 'non_lx_lines']
+LINE_SAMPLES = ["active_L1Md_A", "active_L1Md_T", "inactive_L1Md_A", "inactive_L1Md_T"]
+BW_SAMPLES = ["SRR1207294", "SRR1596085"]
+
+
+rule all:
+    input:
+        expand("/data//chip_seq/matrix_files/{line_sample}_{bwig_sample}_matrix", line_sample = LINE_SAMPLES, bwig_sample = BW_SAMPLES)
+
+
+rule computeM_esos25:
+    input:
+        esos25="/data//chip_seq/ES-OS25_all_output.bwig",
+        sample_files="/data//chip_seq/bed_files/{line_sample}.bed"
+
+    output:
+        gz_output_esos25="/data//chip_seq/matrix_files/{line_sample}_matrix.gz"
+
+    shell:
+        """
+        computeMatrix reference-point -S {input.esos25} -R {input.sample_files} -b 1000 -a 1000 --averageTypeBins "mean" -o {output.gz_output_esos25}
+        """
+
+rule computeM:
+    input:
+        bed_files="/data//chip_seq/bed_files/{line_sample}.bed",
+        bwig_files="/data//chip_seq/{bwig_sample}.bwig"
+
+    output:
+        gz_output="/data//chip_seq/matrix_files/{line_sample}_{bwig_sample}_matrix.gz"
+
+    shell:
+        """
+        computeMatrix reference-point -S {input.bwig_files} -R {input.bed_files} -b 1000 -a 1000 --averageTypeBins "mean" -o {output.gz_output}
+        """
+
+# rule g_zip_esos25:
+#     input: 
+#         gz_esos25="/data//chip_seq/matrix_files/{line_sample}_matrix.gz"
+# 
+#     output:
+#         esos25_matrix="/data//chip_seq/matrix_files/{line_sample}_matrix"
+# 
+#     shell:
+#         """
+#         gunzip {input.gz_esos25}
+#         """
+
+rule g_zip_srr:
+    input: 
+        gz_srr="/data//chip_seq/matrix_files/{line_sample}_{bwig_sample}_matrix.gz"
+
+    output:
+        srr_matrix="/data//chip_seq/matrix_files/{line_sample}_{bwig_sample}_matrix"
+
+
+    shell:
+        """
+        gunzip {input.gz_srr}
+        """
